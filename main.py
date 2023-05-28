@@ -6,6 +6,30 @@ from torch.autograd import Variable
 from torch.distributions import Categorical
 import numpy as np
 import cv2
+from argparse import ArgumentParser
+
+GAME_SETTINGS = {
+    'cartpole': {
+        'in_num': 4,
+        'out_num': 2,
+        'environment_name': 'CartPole-v1',
+    },
+    'acrobot': {
+        'in_num': 6,
+        'out_num': 3,
+        'environment_name': 'Acrobot-v1',
+    },
+    'pendulum': {
+        'in_num': 3,
+        'out_num': 1,
+        'environment_name': 'Pendulum-v1',
+    },
+    'mountain_car': {
+        'in_num': 2,
+        'out_num': 3,
+        'environment_name': 'MountainCar-v0',
+    },
+}
 
 class Net(nn.Module):
     def __init__(self, in_num, out_num):
@@ -99,18 +123,18 @@ class DataCollector:
 
 
 class A2CTrainer:
-    def __init__(self, net, out_num, environment_name, batch_size,
+    def __init__(self, in_num, out_num, environment_name, batch_size,
                  gamma, beta_entropy, learning_rate, clip_size):
 
-        self.net = net
-        self.new_net = copy.deepcopy(net)
+        self.net = Net(in_num, out_num)
+        self.new_net = copy.deepcopy(self.net)
         self.batch_size = batch_size
         self.beta_entropy = beta_entropy
         self.learning_rate = learning_rate
         self.clip_size = clip_size
         self.optimizer = torch.optim.Adam(
             self.new_net.parameters(), lr=self.learning_rate)
-        self.data = DataCollector(net, out_num, environment_name, gamma)
+        self.data = DataCollector(self.net, out_num, environment_name, gamma)
 
     def calculate_actor_loss(self, ratio, advantage):
         opt1 = ratio * advantage
@@ -145,13 +169,13 @@ class A2CTrainer:
         return sum(self.data.rewards), self.net
 
 if __name__ == '__main__':
-    CART_POLE_IN_NUM = 4
-    CART_POLE_OUT_NUM = 2
-    NUM_OF_EPISODES = 1000
-    RENDER_INTERVAL = 50
-    trainer = A2CTrainer(net=Net(CART_POLE_IN_NUM, CART_POLE_OUT_NUM),
-                         out_num=CART_POLE_OUT_NUM,
-                         environment_name='CartPole-v1',
+    parser = ArgumentParser()
+    parser.add_argument('--game', choices=set(GAME_SETTINGS.keys()), default='cartpole', help='Game choice. Carpole by default.')
+    parser.add_argument('--render-interval', type=int, default=50)
+    parser.add_argument('--episodes', type=int, default=1000)
+    ARGS = parser.parse_args()
+
+    trainer = A2CTrainer(**GAME_SETTINGS[ARGS.game],
                          batch_size=500,
                          gamma=0.99,
                          beta_entropy=0.001,
@@ -159,8 +183,8 @@ if __name__ == '__main__':
                          clip_size=0.2)
     best_result = 0
     in_which_episode = 0
-    for episode in range(NUM_OF_EPISODES):
-        if episode % RENDER_INTERVAL == 0:
+    for episode in range(ARGS.episodes):
+        if episode % ARGS.render_interval == 0:
             trainer.data.render = True
         else:
             trainer.data.render = False
