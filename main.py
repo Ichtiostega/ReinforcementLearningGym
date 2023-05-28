@@ -7,6 +7,8 @@ from torch.distributions import Categorical
 import numpy as np
 import cv2
 from argparse import ArgumentParser
+from matplotlib import pyplot as plt
+from pathlib import Path
 
 GAME_SETTINGS = {
     "cartpole": {
@@ -146,6 +148,7 @@ class A2CTrainer:
             self.new_net.parameters(), lr=self.learning_rate
         )
         self.data = DataCollector(self.net, out_num, environment_name, gamma)
+        self.actor_loss, self.critic_loss, self.loss, self.entropy = [], [], [], []
 
     def calculate_actor_loss(self, ratio, advantage):
         opt1 = ratio * advantage
@@ -171,12 +174,32 @@ class A2CTrainer:
 
         loss = actor_loss + critic_loss + self.beta_entropy * entropy.mean()
 
+        self.actor_loss.append(actor_loss)
+        self.critic_loss.append(critic_loss)
+        self.loss.append(loss)
+        self.entropy.append(entropy.mean())
+
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
         self.net.load_state_dict(self.new_net.state_dict())
         return sum(self.data.rewards), self.net
+
+    def draw_graphs(self, out_file: Path):
+        fig, axs = plt.subplots(2, 2)
+        fig.tight_layout()
+        fig.set_figheight(15)
+        fig.set_figwidth(15)
+        for ax, data, label in zip(
+            axs.flatten(),
+            [self.actor_loss, self.critic_loss, self.loss, self.entropy],
+            ["actor_loss", "critic_loss", "common_loss", "entropy"],
+        ):
+            data = [d.item() for d in data]
+            ax.set_title(label)
+            ax.plot(data)
+        fig.savefig(out_file)
 
 
 if __name__ == "__main__":
@@ -215,3 +238,4 @@ if __name__ == "__main__":
         print(
             f"{episode}. {curr_result}\tBest: {best_result} in episode {in_which_episode}"
         )
+    trainer.draw_graphs(Path("graphs.png"))
