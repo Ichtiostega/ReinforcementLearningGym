@@ -9,27 +9,28 @@ import cv2
 from argparse import ArgumentParser
 
 GAME_SETTINGS = {
-    'cartpole': {
-        'in_num': 4,
-        'out_num': 2,
-        'environment_name': 'CartPole-v1',
+    "cartpole": {
+        "in_num": 4,
+        "out_num": 2,
+        "environment_name": "CartPole-v1",
     },
-    'acrobot': {
-        'in_num': 6,
-        'out_num': 3,
-        'environment_name': 'Acrobot-v1',
+    "acrobot": {
+        "in_num": 6,
+        "out_num": 3,
+        "environment_name": "Acrobot-v1",
     },
-    'pendulum': {
-        'in_num': 3,
-        'out_num': 1,
-        'environment_name': 'Pendulum-v1',
+    "pendulum": {
+        "in_num": 3,
+        "out_num": 1,
+        "environment_name": "Pendulum-v1",
     },
-    'mountain_car': {
-        'in_num': 2,
-        'out_num': 3,
-        'environment_name': 'MountainCar-v0',
+    "mountain_car": {
+        "in_num": 2,
+        "out_num": 3,
+        "environment_name": "MountainCar-v0",
     },
 }
+
 
 class Net(nn.Module):
     def __init__(self, in_num, out_num):
@@ -40,14 +41,16 @@ class Net(nn.Module):
             nn.Linear(50, 20),
             nn.ReLU(),
             nn.Linear(20, out_num),
-            nn.Softmax(dim=-1))
+            nn.Softmax(dim=-1),
+        )
 
         self.critic = nn.Sequential(
             nn.Linear(in_num, 50),
             nn.ReLU(),
             nn.Linear(50, 20),
             nn.ReLU(),
-            nn.Linear(20, 1))
+            nn.Linear(20, 1),
+        )
 
     def pick_action(self, observation, collector):
         observation = torch.from_numpy(observation).float()
@@ -57,8 +60,7 @@ class Net(nn.Module):
 
         collector.states.append(observation)
         collector.actions.append(action)
-        collector.action_logarithms.append(
-            distribution.log_prob(action))
+        collector.action_logarithms.append(distribution.log_prob(action))
         return action.item()
 
     def evaluate(self, observation, action):
@@ -68,6 +70,7 @@ class Net(nn.Module):
         entropy = distribution.entropy()
         Qvalue = self.critic(observation)
         return logarithm_probabilities, torch.squeeze(Qvalue), entropy
+
 
 class DataCollector:
     def __init__(self, net, out_num, environment_name, gamma):
@@ -102,7 +105,6 @@ class DataCollector:
         current_state = self.env.reset()[0]
         print(np.array(current_state[0], dtype=np.float32))
         for simulation_step in range(batch_size):
-
             if self.render:
                 img = cv2.cvtColor(self.env.render(), cv2.COLOR_RGB2BGR)
                 cv2.imshow("test", img)
@@ -123,9 +125,17 @@ class DataCollector:
 
 
 class A2CTrainer:
-    def __init__(self, in_num, out_num, environment_name, batch_size,
-                 gamma, beta_entropy, learning_rate, clip_size):
-
+    def __init__(
+        self,
+        in_num,
+        out_num,
+        environment_name,
+        batch_size,
+        gamma,
+        beta_entropy,
+        learning_rate,
+        clip_size,
+    ):
         self.net = Net(in_num, out_num)
         self.new_net = copy.deepcopy(self.net)
         self.batch_size = batch_size
@@ -133,13 +143,13 @@ class A2CTrainer:
         self.learning_rate = learning_rate
         self.clip_size = clip_size
         self.optimizer = torch.optim.Adam(
-            self.new_net.parameters(), lr=self.learning_rate)
+            self.new_net.parameters(), lr=self.learning_rate
+        )
         self.data = DataCollector(self.net, out_num, environment_name, gamma)
 
     def calculate_actor_loss(self, ratio, advantage):
         opt1 = ratio * advantage
-        opt2 = torch.clamp(ratio, 1 - self.clip_size,
-                           1 + self.clip_size) * advantage
+        opt2 = torch.clamp(ratio, 1 - self.clip_size, 1 + self.clip_size) * advantage
         return (-torch.min(opt1, opt2)).mean()
 
     def calculate_critic_loss(self, advantage):
@@ -151,10 +161,10 @@ class A2CTrainer:
         self.data.stack_data()
 
         action_logarithms, Qval, entropy = self.new_net.evaluate(
-            self.data.states, self.data.actions)
+            self.data.states, self.data.actions
+        )
 
-        ratio = torch.exp(action_logarithms -
-                          self.data.action_logarithms.detach())
+        ratio = torch.exp(action_logarithms - self.data.action_logarithms.detach())
         advantage = self.data.Qval - Qval.detach()
         actor_loss = self.calculate_actor_loss(ratio, advantage)
         critic_loss = self.calculate_critic_loss(advantage)
@@ -164,23 +174,31 @@ class A2CTrainer:
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        
+
         self.net.load_state_dict(self.new_net.state_dict())
         return sum(self.data.rewards), self.net
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument('--game', choices=set(GAME_SETTINGS.keys()), default='cartpole', help='Game choice. Carpole by default.')
-    parser.add_argument('--render-interval', type=int, default=50)
-    parser.add_argument('--episodes', type=int, default=1000)
+    parser.add_argument(
+        "--game",
+        choices=set(GAME_SETTINGS.keys()),
+        default="cartpole",
+        help="Game choice. Carpole by default.",
+    )
+    parser.add_argument("--render-interval", type=int, default=50)
+    parser.add_argument("--episodes", type=int, default=1000)
     ARGS = parser.parse_args()
 
-    trainer = A2CTrainer(**GAME_SETTINGS[ARGS.game],
-                         batch_size=500,
-                         gamma=0.99,
-                         beta_entropy=0.001,
-                         learning_rate=0.001,
-                         clip_size=0.2)
+    trainer = A2CTrainer(
+        **GAME_SETTINGS[ARGS.game],
+        batch_size=500,
+        gamma=0.99,
+        beta_entropy=0.001,
+        learning_rate=0.001,
+        clip_size=0.2,
+    )
     best_result = 0
     in_which_episode = 0
     for episode in range(ARGS.episodes):
@@ -195,4 +213,5 @@ if __name__ == '__main__':
             best_result = curr_result
             in_which_episode = episode
         print(
-            f'{episode}. {curr_result}\tBest: {best_result} in episode {in_which_episode}')
+            f"{episode}. {curr_result}\tBest: {best_result} in episode {in_which_episode}"
+        )
