@@ -105,7 +105,6 @@ class DataCollector:
 
     def collect_data_for(self, batch_size):
         current_state = self.env.reset()[0]
-        print(np.array(current_state[0], dtype=np.float32))
         for simulation_step in range(batch_size):
             if self.render:
                 img = cv2.cvtColor(self.env.render(), cv2.COLOR_RGB2BGR)
@@ -114,6 +113,7 @@ class DataCollector:
 
             action = self.net.pick_action(current_state, self)
             observation, reward, done, _, _ = self.env.step(action)
+            # reward += 0.998 #Only for acrobot and mountain car
             self.rewards.append(reward)
             current_state = observation
             if done or simulation_step == batch_size - 1:
@@ -150,10 +150,11 @@ class A2CTrainer:
         self.data = DataCollector(self.net, out_num, environment_name, gamma)
         self.actor_loss, self.critic_loss, self.loss, self.entropy = [], [], [], []
 
-    def calculate_actor_loss(self, ratio, advantage):
-        opt1 = ratio * advantage
-        opt2 = torch.clamp(ratio, 1 - self.clip_size, 1 + self.clip_size) * advantage
-        return (-torch.min(opt1, opt2)).mean()
+    def calculate_actor_loss(self, action_logarithms, advantage):
+        # opt1 = ratio * advantage
+        # opt2 = torch.clamp(ratio, 1 - self.clip_size, 1 + self.clip_size) * advantage
+        # return (-torch.min(opt1, opt2)).mean()
+        return (-action_logarithms * advantage).mean()
 
     def calculate_critic_loss(self, advantage):
         return 0.5 * advantage.pow(2).mean()
@@ -167,9 +168,9 @@ class A2CTrainer:
             self.data.states, self.data.actions
         )
 
-        ratio = torch.exp(action_logarithms - self.data.action_logarithms.detach())
+        # ratio = torch.exp(action_logarithms - self.data.action_logarithms.detach())
         advantage = self.data.Qval - Qval.detach()
-        actor_loss = self.calculate_actor_loss(ratio, advantage)
+        actor_loss = self.calculate_actor_loss(action_logarithms, advantage)
         critic_loss = self.calculate_critic_loss(advantage)
 
         loss = actor_loss + critic_loss + self.beta_entropy * entropy.mean()
@@ -222,7 +223,7 @@ if __name__ == "__main__":
         learning_rate=0.001,
         clip_size=0.2,
     )
-    best_result = 0
+    best_result = -1000
     in_which_episode = 0
     for episode in range(ARGS.episodes):
         if episode % ARGS.render_interval == 0:
