@@ -103,7 +103,7 @@ class DataCollector:
             Qvals.insert(0, Qval)
         return torch.tensor(Qvals)
 
-    def collect_data_for(self, batch_size):
+    def collect_data_for(self, batch_size, reward_alter):
         current_state = self.env.reset()[0]
         for simulation_step in range(batch_size):
             if self.render:
@@ -113,7 +113,8 @@ class DataCollector:
 
             action = self.net.pick_action(current_state, self)
             observation, reward, done, _, _ = self.env.step(action)
-            # reward += 0.998 #Only for acrobot and mountain car
+            if reward_alter:
+                reward += 0.998 #Only for acrobot and mountain car
             self.rewards.append(reward)
             current_state = observation
             if done or simulation_step == batch_size - 1:
@@ -159,16 +160,15 @@ class A2CTrainer:
     def calculate_critic_loss(self, advantage):
         return 0.5 * advantage.pow(2).mean()
 
-    def train(self):
-        self.data.clear_previous_batch_data()
-        self.data.collect_data_for(batch_size=self.batch_size)
+    def train(self, reward_alter):
+        self.data.clear_previous_batch_data() 
+        endgame = self.data.collect_data_for(batch_size=self.batch_size, reward_alter=reward_alter)
         self.data.stack_data()
 
         action_logarithms, Qval, entropy = self.new_net.evaluate(
             self.data.states, self.data.actions
         )
 
-        # ratio = torch.exp(action_logarithms - self.data.action_logarithms.detach())
         advantage = self.data.Qval - Qval.detach()
         actor_loss = self.calculate_actor_loss(action_logarithms, advantage)
         critic_loss = self.calculate_critic_loss(advantage)
@@ -185,6 +185,7 @@ class A2CTrainer:
         self.optimizer.step()
 
         self.net.load_state_dict(self.new_net.state_dict())
+
         return sum(self.data.rewards), self.net
 
     def draw_graphs(self, out_file: Path):
@@ -204,6 +205,7 @@ class A2CTrainer:
 
 
 if __name__ == "__main__":
+    results = []
     parser = ArgumentParser()
     parser.add_argument(
         "--game",
@@ -223,20 +225,19 @@ if __name__ == "__main__":
         learning_rate=0.001,
         clip_size=0.2,
     )
-    best_result = -1000
-    in_which_episode = 0
+    reward_alter=False
+    if ARGS.game == 'acrobot' or ARGS.game == 'mountain_car':
+        reward_alter=True
+
     for episode in range(ARGS.episodes):
         if episode % ARGS.render_interval == 0:
             trainer.data.render = True
         else:
             trainer.data.render = False
 
-        curr_result, _ = trainer.train()
-
-        if curr_result > best_result:
-            best_result = curr_result
-            in_which_episode = episode
+        curr_result, _ = trainer.train(reward_alter)
+        results.append(curr_result)
         print(
-            f"{episode}. {curr_result}\tBest: {best_result} in episode {in_which_episode}"
+            f"{episode}. {curr_result:.{4}}\tBest: {max(results):.{4}} in episode {results.index(max(results))}\tAverage: {sum(results)/len(results):.{4}}\tLast 10 average: {sum(results[-10:])/10:.{4}}"
         )
     trainer.draw_graphs(Path("graphs.png"))
